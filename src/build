@@ -1,0 +1,7 @@
+CPPFLAGS="${CPPFLAGS:--I../../../include}"
+
+CC="${CC:-gcc}"
+CFLAGS="${CFLAGS:--Wall  -g }"
+
+$CC $CPPFLAGS $CFLAGS -fPIC -c $1.c && \
+$CC $CFLAGS -fPIC -shared ${LDFLAGS} -Wl,-soname,$1.so -o $1.so $1.o -lc
