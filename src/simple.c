@@ -1,35 +1,35 @@
 /*
- *  *  OpenVPN -- An application to securely tunnel IP networks
- *   *             over a single TCP/UDP port, with support for SSL/TLS-based
- *    *             session authentication and key exchange,
- *     *             packet encryption, packet authentication, and
- *      *             packet compression.
- *       *
- *        *  Copyright (C) 2002-2010 OpenVPN Technologies, Inc. <sales@openvpn.net>
- *         *
- *          *  This program is free software; you can redistribute it and/or modify
- *           *  it under the terms of the GNU General Public License version 2
- *            *  as published by the Free Software Foundation.
- *             *
- *              *  This program is distributed in the hope that it will be useful,
- *               *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *                *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *                 *  GNU General Public License for more details.
- *                  *
- *                   *  You should have received a copy of the GNU General Public License
- *                    *  along with this program (see the file COPYING included with this
- *                     *  distribution); if not, write to the Free Software Foundation, Inc.,
- *                      *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *                       */
+ *  OpenVPN -- An application to securely tunnel IP networks
+ *             over a single TCP/UDP port, with support for SSL/TLS-based
+ *             session authentication and key exchange,
+ *             packet encryption, packet authentication, and
+ *             packet compression.
+ *
+ *  Copyright (C) 2002-2010 OpenVPN Technologies, Inc. <sales@openvpn.net>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2
+ *  as published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program (see the file COPYING included with this
+ *  distribution); if not, write to the Free Software Foundation, Inc.,
+ *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 
 /*
- *  * This file implements a simple OpenVPN plugin module which
- *   * will examine the username/password provided by a client,
- *    * and make an accept/deny determination.  Will run
- *     * on Windows or *nix.
- *      *
- *       * See the README file for build instructions.
- *        */
+ * This file implements a simple OpenVPN plugin module which
+ * will examine the username/password provided by a client,
+ * and make an accept/deny determination.  Will run
+ * on Windows or *nix.
+ *
+ * See the README file for build instructions.
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -42,10 +42,11 @@
 #define INDEX_NETWORK 0
 #define INDEX_REGEX 1
 #define INDEX_NETMASK 2
+// TODO : It should be 3 but I have a bug that I need to correct
 #define NUM_PARAM_CONF 4
 
 /*
- * Our context, where we keep our state.
+ * Each subnet_ip correspond to an ip address
  */
 typedef struct subnet_ip{
     char *address;
@@ -53,21 +54,30 @@ typedef struct subnet_ip{
     char *common_name;
 }subnet_ip;
  
- 
+
+/*
+ * Client context information
+ */
 typedef struct plugin_per_client_context {
   subnet_ip *ip;
   char* generated_conf_file;
 }plugin_per_client_context;
 
+/*
+ * Each subnet config
+ */
 typedef struct realm_conf{
     const char *network;
     const char *netmask;
-    const char *R;
+    const char *regex;
     int start[4];
     int end[4];
     subnet_ip **subnet;
  }realm_conf;
  
+ /*
+  * The full plugin context, with the different subnet
+  */
  typedef struct plugin_context{
   char *conf_dir;
   char *plugin_conf;
@@ -75,7 +85,7 @@ typedef struct realm_conf{
   realm_conf **configs;
 }plugin_context;
 
-
+//Todo: move it in a header
 static int get_nb_line(char *file_name);
 static int get_config(struct plugin_context *context, const char *argv[], const char *envp[]);
 static int generate_subnet(struct plugin_context *context, const char *argv[], const char *envp[]);
@@ -84,7 +94,7 @@ static int generate_subnet(struct plugin_context *context, const char *argv[], c
 
 
 /*
- * Free Context
+ * Free Context: This function will free the context for the plugin (A lot of malloc)
  */
 static int free_plugin_context(plugin_context * context){
     int i;
@@ -100,10 +110,10 @@ static int free_plugin_context(plugin_context * context){
 }
 
 /*
- *  * Given an environmental variable name, search
- *   * the envp array for its value, returning it
- *    * if found or NULL otherwise.
- *     */
+ *  Given an environmental variable name, search
+ *  the envp array for its value, returning it
+ *  if found or NULL otherwise.
+ */
 static const char *
 get_env (const char *name, const char *envp[])
 {
@@ -126,7 +136,7 @@ get_env (const char *name, const char *envp[])
 
 
 /*
- * Found an ip address avaiable in the array
+ * Found an ip address available in the array
  */
 struct subnet_ip *
 found_ip_realm(const char *name, struct realm_conf *conf){
@@ -148,8 +158,8 @@ found_ip_realm(const char *name, struct realm_conf *conf){
 
 
 /*
- *  * Need to lookup for the IP, then create the file
- *   */
+ * Need to lookup for the IP, then create the file
+ */
 static int
 client_connect (struct plugin_context *context, const char *argv[], const char *envp[], struct plugin_per_client_context *client_ip){
     int i,err,match;
@@ -157,15 +167,17 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
     const char *common_name = NULL;
     common_name = strdup(get_env("common_name",envp));
     printf("PLUGIN_REALM: common_name %s\n",common_name);
+    // For each subnet
     for(i = 0; i< context->numRealm;i++){
         char *regex = NULL;
-        regex = strdup(context->configs[i]->R);
+        regex = strdup(context->configs[i]->regex);
         printf("PLUGIN_REALM: commonname - %s\n",common_name);
         printf("PLUGIN_REALM: regex - %s\n",regex);
         err = regcomp (&preg, regex, REG_NOSUB | REG_EXTENDED);
         if(err == 0){
             match = regexec (&preg,common_name , 0, NULL, 0);
             regfree (&preg);
+            // Look if the common_name of the certificate correspond to the regex
             if(match == 0){
                 printf("PLUGIN_REALM: Match founded for %s in Realm Number %d with regex %s\n",common_name,i, regex);
                 char conf[256];
@@ -173,13 +185,20 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
                 FILE * file = NULL;
                 subnet_ip *ip = NULL;
                 ip = found_ip_realm(common_name,context->configs[i] );
+                // If we found an ip address
                 if(ip){
+                    // filename
                     sprintf(filename,"%s%s",context->conf_dir,common_name);
+                    // Configuration
                     sprintf(conf,"ifconfig-push %s %s",ip->address,context->configs[i]->netmask);
+                    // Open the file
                     file = fopen(filename, "w+");
                     printf("PLUGIN_REALM: Configuration file generated for %s with ip %s\n",common_name,ip->address);
+                    // Write the output file
                     fprintf(file, "ifconfig-push %s %s",ip->address,context->configs[i]->netmask);
                     fclose(file);
+                    
+                    // Edit the client context
                     client_ip->ip = ip;
                     client_ip->generated_conf_file = strdup(filename);
                     return OPENVPN_PLUGIN_FUNC_SUCCESS;
@@ -195,14 +214,20 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
 
 static int
 client_disconnect (struct plugin_context *context, const char *argv[], const char *envp[], struct plugin_per_client_context *client_conf){
-      printf("PLUGIN_REALM_DISCONNECT: ip address %s", client_conf->ip->address);  
       char filename[256];
+      printf("PLUGIN_REALM_DISCONNECT: ip address %s", client_conf->ip->address);  
+      // Delete the file concerning the configuration
       sprintf(filename,"%s%s",context->conf_dir,client_conf->ip->common_name);
       unlink(filename);
+      // relase the ip in the global conf
       client_conf->ip->common_name = NULL;
       client_conf->ip->used = 0;
       return OPENVPN_PLUGIN_FUNC_SUCCESS;
 }
+
+/*
+ * Number of line in a file (used to know how many configuration) 
+ */
 static int
 get_nb_line(char *file_name){
     FILE *fh = fopen(file_name, "r");
@@ -214,26 +239,34 @@ get_nb_line(char *file_name){
     fclose(fh);
     return lines;
 }
+
+/*
+ * Generate the subnet in the memory, this way when we need to look up for an ip, we just have to look inside an array
+ */
 static int 
 generate_subnet(struct plugin_context *context, const char *argv[], const char *envp[])
 {
     int count,compter,i,j,k;
     char buf[256];
 
-        
+    // For each subnet
     for(i = 0; i < context->numRealm;i++){
         count = (context->configs[i]->end[2] - context->configs[i]->start[2] + 1) * (context->configs[i]->end[3] - context->configs[i]->start[3] + 1);
         printf("PLUGIN_REALM: NUM SUBNET %d\n\n",count);
         context->configs[i]->subnet = malloc(count * sizeof(subnet_ip *));
         compter = 0;
+        
         for(j = context->configs[i]->start[2]; j <= context->configs[i]->end[2] ; j++){
             for(k = context->configs[i]->start[3]; k <= context->configs[i]->end[3] ; k++){
+                // Do not give the subnet address
                 if(j == context->configs[i]->start[2] && k == context->configs[i]->start[3]){
                     printf("PLUGIN_REALM: Address Ip network: %d.%d.%d.%d\n",context->configs[i]->start[0],context->configs[i]->start[1],j,k);
                 }
+                // Do not give the first address
                 else if(j == context->configs[i]->start[2] && k == context->configs[i]->start[3] + 1){
                      printf("PLUGIN_REALM: Address Ip Gateway network: %d.%d.%d.%d\n",context->configs[i]->start[0],context->configs[i]->start[1],j,k);
                 }
+                // Do not give the netmask address
                 else if(j == context->configs[i]->end[2] && k == context->configs[i]->end[3]){
                      printf("PLUGIN_REALM: Address Brodcast network: %d.%d.%d.%d\n",context->configs[i]->start[0],context->configs[i]->start[1],j,k);
                 }
@@ -269,7 +302,7 @@ get_config(struct plugin_context *context, const char *argv[], const char *envp[
             switch (j)
                 {
                 case INDEX_REGEX:
-                  context->configs[i]->R = strdup(buf);
+                  context->configs[i]->regex = strdup(buf);
                   break;
                 case INDEX_NETWORK:
                   context->configs[i]->network = strdup(buf);
@@ -288,7 +321,7 @@ get_config(struct plugin_context *context, const char *argv[], const char *envp[
         // make start
         char *netmaskTMP = strdup(context->configs[i]->netmask);
         char *addressTMP = strdup(context->configs[i]->network);
-        char *regexTMP = strdup(context->configs[i]->R);
+        char *regexTMP = strdup(context->configs[i]->regex);
         printf("Realm number %d\n",i+1);
         printf("Regex  %s\n",regexTMP);
         printf("network  %s\n",addressTMP);
