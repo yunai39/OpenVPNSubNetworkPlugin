@@ -193,8 +193,7 @@ int matchstar(int c, char *regexp, char *text)
  */
 static int
 client_connect (struct plugin_context *context, const char *argv[], const char *envp[], struct plugin_per_client_context *client_ip){
-    int i,err;
-    regex_t preg;
+    int i;
     const char *common_name = NULL;
     common_name = strdup(get_env("common_name",envp));
     printf("PLUGIN_REALM: common_name %s\n",common_name);
@@ -204,6 +203,8 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
         regex = strdup(context->configs[i]->regex);
         printf("PLUGIN_REALM: commonname - %s\n",common_name);
         printf("PLUGIN_REALM: regex - %s\n",regex);
+        printf("PLUGIN_REALM: network - %s\n",context->configs[i]->network);
+        printf("PLUGIN_REALM: netmask - %s\n",context->configs[i]->netmask);
             // Look if the common_name of the certificate correspond to the regex
         if(match(regex, common_name )){
             printf("PLUGIN_REALM: Match founded for %s in Realm Number %d with regex %s\n",common_name,i, regex);
@@ -213,7 +214,7 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
             subnet_ip *ip = NULL;
             ip = found_ip_realm(common_name,context->configs[i] );
             // If we found an ip address
-            if(ip){
+            if(ip != NULL){
                 // filename
                 sprintf(filename,"%s%s",context->conf_dir,common_name);
                 // Configuration
@@ -229,6 +230,10 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
                 client_ip->ip = ip;
                 client_ip->generated_conf_file = strdup(filename);
                 return OPENVPN_PLUGIN_FUNC_SUCCESS;
+            }else{
+                sprintf(filename,"%s%s",context->conf_dir,common_name);
+                unlink(filename);
+                return OPENVPN_PLUGIN_FUNC_ERROR;
             }
         }else{
             printf("PLUGIN_REALM: No match founded for %s in Realm %d with regex %s",common_name, i,regex);
@@ -241,13 +246,16 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
 static int
 client_disconnect (struct plugin_context *context, const char *argv[], const char *envp[], struct plugin_per_client_context *client_conf){
       char filename[256];
-      printf("PLUGIN_REALM_DISCONNECT: ip address %s", client_conf->ip->address);  
-      // Delete the file concerning the configuration
-      sprintf(filename,"%s%s",context->conf_dir,client_conf->ip->common_name);
-      unlink(filename);
-      // relase the ip in the global conf
-      client_conf->ip->common_name = NULL;
-      client_conf->ip->used = 0;
+      if(client_conf->ip != NULL){
+          printf("PLUGIN_REALM_DISCONNECT: ip address %s", client_conf->ip->address);  
+          // Delete the file concerning the configuration
+          sprintf(filename,"%s%s",context->conf_dir,client_conf->ip->common_name);
+          unlink(filename);
+          // relase the ip in the global conf
+
+          client_conf->ip->common_name = NULL;
+          client_conf->ip->used = 0;
+      }
       return OPENVPN_PLUGIN_FUNC_SUCCESS;
 }
 
@@ -295,6 +303,9 @@ generate_subnet(struct plugin_context *context, const char *argv[], const char *
                 // Do not give the netmask address
                 else if(j == context->configs[i]->end[2] && k == context->configs[i]->end[3]){
                      printf("PLUGIN_REALM: Address Brodcast network: %d.%d.%d.%d\n",context->configs[i]->start[0],context->configs[i]->start[1],j,k);
+                }
+                else if(j == context->configs[i]->end[2] && k == context->configs[i]->end[3]-1){
+                     printf("PLUGIN_REALM: Address DHCP network: %d.%d.%d.%d\n",context->configs[i]->start[0],context->configs[i]->start[1],j,k);
                 }
                 else{
                     context->configs[i]->subnet[compter] = malloc(sizeof(subnet_ip));
@@ -436,8 +447,10 @@ openvpn_plugin_client_constructor_v1 (openvpn_plugin_handle_t handle)
 OPENVPN_EXPORT void
 openvpn_plugin_client_destructor_v1 (openvpn_plugin_handle_t handle, void *per_client_context)
 {
-  printf ("PLUGIN_REALM: openvpn_plugin_client_destructor_v1\n");
-  free (per_client_context);
+    printf ("PLUGIN_REALM: openvpn_plugin_client_destructor_v1\n");
+    if(per_client_context != NULL){
+        //free (per_client_context);
+    }
 }
 
 OPENVPN_EXPORT void
