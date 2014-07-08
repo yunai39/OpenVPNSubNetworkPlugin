@@ -142,7 +142,7 @@ struct subnet_ip *
 found_ip_realm(const char *name, struct realm_conf *conf){
     int i=0;
     printf("PLUGIN_REALM: found_ip_realm %s netmask\n", conf->network);
-    for (i =0 ; i < sizeof(conf->subnet) / sizeof(subnet_ip **);i++){
+    for (i =0 ; conf->subnet[i] ;i++){
         if(conf->subnet[i]->used == 0){
             conf->subnet[i]->used = 1;
             conf->subnet[i]->common_name = strdup(name);
@@ -153,16 +153,47 @@ found_ip_realm(const char *name, struct realm_conf *conf){
 
 }
 
+/* matchhere: search for regexp at beginning of text */
+int matchhere(char *regexp, char *text)
+{
+	if (regexp[0] == '\0')
+		return 1;
+	if (regexp[1] == '*')
+		return matchstar(regexp[0], regexp+2, text);
+	if (regexp[0] == '$' && regexp[1] == '\0')
+		return *text == '\0';
+	if (*text!='\0' && (regexp[0]=='.' || regexp[0]==*text))
+		return matchhere(regexp+1, text+1);
+	return 0;
+}
 
+/* match: search for regexp anywhere in text */
+int match(char *regexp, char *text)
+{
+	if (regexp[0] == '^')
+		return matchhere(regexp+1, text);
+	do {	/* must look even if string is empty */
+		if (matchhere(regexp, text))
+			return 1;
+	} while (*text++ != '\0');
+	return 0;
+}
 
-
-
+/* matchstar: search for c*regexp at beginning of text */
+int matchstar(int c, char *regexp, char *text)
+{
+	do {	/* a * matches zero or more instances */
+		if (matchhere(regexp, text))
+			return 1;
+	} while (*text != '\0' && (*text++ == c || c == '.'));
+	return 0;
+}
 /*
  * Need to lookup for the IP, then create the file
  */
 static int
 client_connect (struct plugin_context *context, const char *argv[], const char *envp[], struct plugin_per_client_context *client_ip){
-    int i,err,match;
+    int i,err;
     regex_t preg;
     const char *common_name = NULL;
     common_name = strdup(get_env("common_name",envp));
@@ -173,39 +204,34 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
         regex = strdup(context->configs[i]->regex);
         printf("PLUGIN_REALM: commonname - %s\n",common_name);
         printf("PLUGIN_REALM: regex - %s\n",regex);
-        err = regcomp (&preg, regex, REG_NOSUB | REG_EXTENDED);
-        if(err == 0){
-            match = regexec (&preg,common_name , 0, NULL, 0);
-            regfree (&preg);
             // Look if the common_name of the certificate correspond to the regex
-            if(match == 0){
-                printf("PLUGIN_REALM: Match founded for %s in Realm Number %d with regex %s\n",common_name,i, regex);
-                char conf[256];
-                char filename[256];
-                FILE * file = NULL;
-                subnet_ip *ip = NULL;
-                ip = found_ip_realm(common_name,context->configs[i] );
-                // If we found an ip address
-                if(ip){
-                    // filename
-                    sprintf(filename,"%s%s",context->conf_dir,common_name);
-                    // Configuration
-                    sprintf(conf,"ifconfig-push %s %s",ip->address,context->configs[i]->netmask);
-                    // Open the file
-                    file = fopen(filename, "w+");
-                    printf("PLUGIN_REALM: Configuration file generated for %s with ip %s\n",common_name,ip->address);
-                    // Write the output file
-                    fprintf(file, "ifconfig-push %s %s",ip->address,context->configs[i]->netmask);
-                    fclose(file);
-                    
-                    // Edit the client context
-                    client_ip->ip = ip;
-                    client_ip->generated_conf_file = strdup(filename);
-                    return OPENVPN_PLUGIN_FUNC_SUCCESS;
-                }
-            }else{
-                printf("PLUGIN_REALM: No match founded for %s in Realm %d with regex %s",common_name, i,regex);
+        if(match(regex, common_name )){
+            printf("PLUGIN_REALM: Match founded for %s in Realm Number %d with regex %s\n",common_name,i, regex);
+            char conf[256];
+            char filename[256];
+            FILE * file = NULL;
+            subnet_ip *ip = NULL;
+            ip = found_ip_realm(common_name,context->configs[i] );
+            // If we found an ip address
+            if(ip){
+                // filename
+                sprintf(filename,"%s%s",context->conf_dir,common_name);
+                // Configuration
+                sprintf(conf,"ifconfig-push %s %s",ip->address,context->configs[i]->netmask);
+                // Open the file
+                file = fopen(filename, "w+");
+                printf("PLUGIN_REALM: Configuration file generated for %s with ip %s\n",common_name,ip->address);
+                // Write the output file
+                fprintf(file, "ifconfig-push %s %s",ip->address,context->configs[i]->netmask);
+                fclose(file);
+                
+                // Edit the client context
+                client_ip->ip = ip;
+                client_ip->generated_conf_file = strdup(filename);
+                return OPENVPN_PLUGIN_FUNC_SUCCESS;
             }
+        }else{
+            printf("PLUGIN_REALM: No match founded for %s in Realm %d with regex %s",common_name, i,regex);
         }
     }
     return OPENVPN_PLUGIN_FUNC_ERROR;
@@ -420,4 +446,3 @@ openvpn_plugin_close_v1 (openvpn_plugin_handle_t handle)
   struct plugin_context *context = (struct plugin_context *) handle;
   free_plugin_context(context);
 }
-
