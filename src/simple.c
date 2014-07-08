@@ -23,12 +23,8 @@
  */
 
 /*
- * This file implements a simple OpenVPN plugin module which
- * will examine the username/password provided by a client,
- * and make an accept/deny determination.  Will run
- * on Windows or *nix.
- *
- * See the README file for build instructions.
+ * This file implements a OpenVPN module to be able to 
+ * give client different Realm for user based on the certificat name pattern
  */
 
 #include <stdio.h>
@@ -76,7 +72,7 @@ typedef struct realm_conf{
  }realm_conf;
  
  /*
-  * The full plugin context, with the different subnet
+  * The full plugin context, with the different configuration
   */
  typedef struct plugin_context{
   char *conf_dir;
@@ -94,7 +90,7 @@ static int generate_subnet(struct plugin_context *context, const char *argv[], c
 
 
 /*
- * Free Context: This function will free the context for the plugin (A lot of malloc)
+ * Free Context: This function will free the context for the plugin 
  */
 static int free_plugin_context(plugin_context * context){
     int i;
@@ -136,7 +132,7 @@ get_env (const char *name, const char *envp[])
 
 
 /*
- * Found an ip address available in the array
+ * Found an ip address available in the array of teh subnet
  */
 struct subnet_ip *
 found_ip_realm(const char *name, struct realm_conf *conf){
@@ -150,10 +146,13 @@ found_ip_realm(const char *name, struct realm_conf *conf){
         }
     }
     return NULL;
-
 }
 
-/* matchhere: search for regexp at beginning of text */
+
+
+/* 
+ * matchhere: search for regexp at beginning of text 
+ */
 int matchhere(char *regexp, char *text)
 {
 	if (regexp[0] == '\0')
@@ -167,7 +166,9 @@ int matchhere(char *regexp, char *text)
 	return 0;
 }
 
-/* match: search for regexp anywhere in text */
+/*
+ * match: search for regexp anywhere in text 
+ */
 int match(char *regexp, char *text)
 {
 	if (regexp[0] == '^')
@@ -179,7 +180,9 @@ int match(char *regexp, char *text)
 	return 0;
 }
 
-/* matchstar: search for c*regexp at beginning of text */
+/*
+ * matchstar: search for c*regexp at beginning of text 
+ */
 int matchstar(int c, char *regexp, char *text)
 {
 	do {	/* a * matches zero or more instances */
@@ -242,7 +245,9 @@ client_connect (struct plugin_context *context, const char *argv[], const char *
     return OPENVPN_PLUGIN_FUNC_ERROR;
 }
 
-
+/*
+ * On client disconnection we need to clean the file
+ */
 static int
 client_disconnect (struct plugin_context *context, const char *argv[], const char *envp[], struct plugin_per_client_context *client_conf){
       char filename[256];
@@ -320,6 +325,9 @@ generate_subnet(struct plugin_context *context, const char *argv[], const char *
     return 0;
 }
 
+/*
+ * Generate the configuration
+ */
 static int
 get_config(struct plugin_context *context, const char *argv[], const char *envp[])
 {
@@ -449,7 +457,7 @@ openvpn_plugin_client_destructor_v1 (openvpn_plugin_handle_t handle, void *per_c
 {
     printf ("PLUGIN_REALM: openvpn_plugin_client_destructor_v1\n");
     if(per_client_context != NULL){
-        //free (per_client_context);
+        free (per_client_context);
     }
 }
 
